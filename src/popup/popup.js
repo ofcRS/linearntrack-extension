@@ -246,29 +246,46 @@ function getFilteredPicks(maxCount, minScore) {
 		.map(pick => pick.number);
 }
 
-// Enhanced autofill with parameters
+// Enhanced autofill with parameters - fetches fresh recommendations to avoid stale data
 async function autofillPicks() {
-	if (!isPremium || !currentRecommendations?.topPicks) {
+	if (!isPremium) {
 		return;
 	}
 
 	const count = parseInt(document.getElementById("fill-count")?.value) || 10;
 	const minScore = parseFloat(document.getElementById("fill-min-score")?.value) || 0;
-	const numbers = getFilteredPicks(count, minScore);
-
-	if (numbers.length === 0) {
-		alert("No picks match your criteria");
-		return;
-	}
 
 	try {
-		const result = await chrome.runtime.sendMessage({
+		// Fetch FRESH recommendations from server before autofilling
+		const result = await chrome.runtime.sendMessage({ type: "GET_KENO_RECOMMENDATIONS" });
+		const { recommendations, tier, error } = result;
+
+		if (error || !recommendations?.topPicks) {
+			alert("Failed to get recommendations. Try again.");
+			return;
+		}
+
+		// Use fresh recommendations
+		const numbers = recommendations.topPicks
+			.filter(pick => pick.score >= minScore)
+			.slice(0, count)
+			.map(pick => pick.number);
+
+		if (numbers.length === 0) {
+			alert("No picks match your criteria");
+			return;
+		}
+
+		// Update UI and cache with fresh data
+		renderRecommendations(recommendations, tier);
+
+		const autofillResult = await chrome.runtime.sendMessage({
 			type: "KENO_AUTOFILL",
 			numbers: numbers
 		});
 
-		if (!result.success) {
-			console.error("Autofill failed:", result.error);
+		if (!autofillResult.success) {
+			console.error("Autofill failed:", autofillResult.error);
 		}
 	} catch (e) {
 		console.error("Failed to autofill:", e);

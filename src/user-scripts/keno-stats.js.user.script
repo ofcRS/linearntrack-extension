@@ -26,6 +26,10 @@ function initKenoStats() {
     let kenoAutoSettings = { minScore: 6.0 };
     let pendingKenoTimeouts = [];
 
+    // Recommendations update tracking (for autoplay sync)
+    let waitingForRecommendations = false;
+    let recommendationsResolve = null;
+
     // Schedule an action with cancellation support
     function scheduleKenoAction(fn, delay) {
         const timeoutId = setTimeout(() => {
@@ -40,6 +44,23 @@ function initKenoStats() {
     function cancelKenoActions() {
         pendingKenoTimeouts.forEach(id => clearTimeout(id));
         pendingKenoTimeouts = [];
+    }
+
+    // Wait for recommendations update from server (for autoplay sync)
+    function waitForRecommendationsUpdate(timeout = 10000) {
+        return new Promise((resolve) => {
+            waitingForRecommendations = true;
+            recommendationsResolve = resolve;
+            // Timeout fallback in case server doesn't respond
+            setTimeout(() => {
+                if (waitingForRecommendations) {
+                    console.log('[KENO Auto] Timeout waiting for recommendations, using cached');
+                    waitingForRecommendations = false;
+                    recommendationsResolve = null;
+                    resolve();
+                }
+            }, timeout);
+        });
     }
 
     // Click the bet/play button
@@ -554,10 +575,13 @@ function initKenoStats() {
                     }
                 }, '*');
 
-                // Continue autoplay if enabled
+                // Continue autoplay if enabled - wait for fresh recommendations first
                 if (isKenoAutoPlaying) {
-                    console.log('[KENO Auto] Round complete, scheduling next round...');
-                    scheduleKenoAction(startKenoAutoLoop, 2000); // 2s delay between rounds
+                    console.log('[KENO Auto] Round complete, waiting for fresh recommendations...');
+                    waitForRecommendationsUpdate().then(() => {
+                        console.log('[KENO Auto] Got recommendations, starting next round in 500ms');
+                        scheduleKenoAction(startKenoAutoLoop, 500);
+                    });
                 }
             }
         } catch (e) {
@@ -601,6 +625,13 @@ function initKenoStats() {
                 // tier is now "premium", "free", or "offline" - but we don't need it
                 // because server already gated the data
                 injectBadges(currentRecommendations);
+                // Signal recommendations are ready for autoplay
+                if (waitingForRecommendations && recommendationsResolve) {
+                    console.log('[KENO Auto] Received fresh recommendations');
+                    recommendationsResolve();
+                    waitingForRecommendations = false;
+                    recommendationsResolve = null;
+                }
                 break;
 
             case 'KENO_PREMIUM_STATUS_CHANGED':
