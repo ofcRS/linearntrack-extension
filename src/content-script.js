@@ -104,6 +104,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		}, "*");
 		sendResponse({ success: true });
 	}
+	// KENO autoplay messages
+	else if (message.type === "KENO_START_AUTO") {
+		window.postMessage({
+			type: "KENO_START_AUTO",
+			settings: message.settings,
+		}, "*");
+		sendResponse({ success: true });
+	} else if (message.type === "KENO_STOP_AUTO") {
+		window.postMessage({
+			type: "KENO_STOP_AUTO",
+		}, "*");
+		sendResponse({ success: true });
+	}
 	return true;
 });
 

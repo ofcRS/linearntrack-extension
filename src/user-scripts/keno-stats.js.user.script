@@ -21,6 +21,94 @@ function initKenoStats() {
     let isPremium = false;
     let badgesEnabled = true;
 
+    // Autoplay state
+    let isKenoAutoPlaying = false;
+    let kenoAutoSettings = { minScore: 6.0 };
+    let pendingKenoTimeouts = [];
+
+    // Schedule an action with cancellation support
+    function scheduleKenoAction(fn, delay) {
+        const timeoutId = setTimeout(() => {
+            pendingKenoTimeouts = pendingKenoTimeouts.filter(id => id !== timeoutId);
+            if (isKenoAutoPlaying) fn();
+        }, delay);
+        pendingKenoTimeouts.push(timeoutId);
+        return timeoutId;
+    }
+
+    // Cancel all pending autoplay actions
+    function cancelKenoActions() {
+        pendingKenoTimeouts.forEach(id => clearTimeout(id));
+        pendingKenoTimeouts = [];
+    }
+
+    // Click the bet/play button
+    function clickKenoBet() {
+        const betButton = document.querySelector('[data-testid="bet-button"]')
+            || document.querySelector('button[type="submit"]')
+            || document.querySelector('[class*="bet-button"]');
+        if (betButton && !betButton.disabled) {
+            betButton.click();
+            console.log('[KENO Auto] Bet button clicked');
+            return true;
+        }
+        console.log('[KENO Auto] Bet button not found or disabled');
+        return false;
+    }
+
+    // Auto-select numbers based on score threshold
+    function autoSelectNumbers(minScore) {
+        // Clear existing selections first
+        const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
+        selectedTiles.forEach(tile => tile.click());
+
+        setTimeout(() => {
+            if (!currentRecommendations?.topPicks) {
+                console.log('[KENO Auto] No recommendations available');
+                return;
+            }
+
+            const picks = currentRecommendations.topPicks.filter(p => p.score >= minScore);
+            console.log('[KENO Auto] Selecting', picks.length, 'numbers with score >=', minScore);
+
+            if (picks.length === 0) {
+                console.log('[KENO Auto] No picks meet score threshold');
+                return;
+            }
+
+            picks.forEach((pick, idx) => {
+                setTimeout(() => {
+                    const tile = document.querySelector(`button.tile[data-index="${pick.number - 1}"]`);
+                    if (tile && tile.getAttribute('data-selected') !== 'true') {
+                        tile.click();
+                    }
+                }, idx * 50);
+            });
+        }, 100);
+    }
+
+    // Start the autoplay loop
+    function startKenoAutoLoop() {
+        if (!isKenoAutoPlaying) return;
+
+        console.log('[KENO Auto] Starting autoplay loop');
+
+        // 1. Select numbers based on score threshold
+        autoSelectNumbers(kenoAutoSettings.minScore);
+
+        // 2. Wait for selections, then click bet
+        scheduleKenoAction(() => {
+            if (clickKenoBet()) {
+                console.log('[KENO Auto] Bet placed, waiting for result...');
+            } else {
+                console.log('[KENO Auto] Failed to place bet, retrying...');
+                // Retry after a delay
+                scheduleKenoAction(startKenoAutoLoop, 2000);
+            }
+            // Loop continues via processKenoResponse callback
+        }, 1000); // 1s delay for tile selections
+    }
+
     // Make element draggable and resizable
     function makeDraggableResizable(element, storageKey) {
         let isDragging = false;
@@ -465,6 +553,12 @@ function initKenoStats() {
                         currency: bet.currency,
                     }
                 }, '*');
+
+                // Continue autoplay if enabled
+                if (isKenoAutoPlaying) {
+                    console.log('[KENO Auto] Round complete, scheduling next round...');
+                    scheduleKenoAction(startKenoAutoLoop, 2000); // 2s delay between rounds
+                }
             }
         } catch (e) {
             console.error('[KENO Stats] Error processing response:', e);
@@ -521,6 +615,20 @@ function initKenoStats() {
 
             case 'KENO_AUTOFILL':
                 autofillNumbers(event.data.numbers);
+                break;
+
+            case 'KENO_START_AUTO':
+                console.log('[KENO Auto] Starting autoplay with settings:', event.data.settings);
+                isKenoAutoPlaying = true;
+                kenoAutoSettings = event.data.settings || { minScore: 6.0 };
+                cancelKenoActions();
+                startKenoAutoLoop();
+                break;
+
+            case 'KENO_STOP_AUTO':
+                console.log('[KENO Auto] Stopping autoplay');
+                isKenoAutoPlaying = false;
+                cancelKenoActions();
                 break;
         }
     });

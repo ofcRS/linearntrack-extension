@@ -24,6 +24,10 @@ const SESSION_HEARTBEAT_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let currentSession = null;
 let heartbeatInterval = null;
 
+// Keno autoplay state
+let kenoAutoPlayEnabled = false;
+let kenoAutoSettings = { minScore: 6.0 };
+
 // =====================
 // SESSION MANAGEMENT (for premium KENO)
 // =====================
@@ -583,6 +587,43 @@ async function handleMessage(message, sender) {
 		case "TRACK_HEATMAP_OPENED":
 			trackHeatmapOpened(message.game || "unknown");
 			return { success: true };
+
+		case "START_KENO_AUTO": {
+			kenoAutoPlayEnabled = true;
+			kenoAutoSettings = message.settings || { minScore: 6.0 };
+			const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+			if (tabs[0]?.id) {
+				chrome.tabs.sendMessage(tabs[0].id, {
+					type: "KENO_START_AUTO",
+					settings: kenoAutoSettings,
+				}).catch(() => {});
+			}
+			// Broadcast state update
+			chrome.runtime.sendMessage({
+				type: "KENO_AUTO_STATE_UPDATE",
+				isAutoPlaying: true,
+			}).catch(() => {});
+			return { success: true };
+		}
+
+		case "STOP_KENO_AUTO": {
+			kenoAutoPlayEnabled = false;
+			const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+			if (tabs[0]?.id) {
+				chrome.tabs.sendMessage(tabs[0].id, {
+					type: "KENO_STOP_AUTO",
+				}).catch(() => {});
+			}
+			// Broadcast state update
+			chrome.runtime.sendMessage({
+				type: "KENO_AUTO_STATE_UPDATE",
+				isAutoPlaying: false,
+			}).catch(() => {});
+			return { success: true };
+		}
+
+		case "GET_KENO_AUTO_STATE":
+			return { isAutoPlaying: kenoAutoPlayEnabled, settings: kenoAutoSettings };
 
 		default:
 			return { error: "Unknown message type" };

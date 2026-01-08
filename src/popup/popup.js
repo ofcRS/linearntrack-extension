@@ -237,13 +237,29 @@ async function activateLicense() {
 	}
 }
 
+// Get filtered picks based on count and min score
+function getFilteredPicks(maxCount, minScore) {
+	if (!currentRecommendations?.topPicks) return [];
+	return currentRecommendations.topPicks
+		.filter(pick => pick.score >= minScore)
+		.slice(0, maxCount)
+		.map(pick => pick.number);
+}
+
+// Enhanced autofill with parameters
 async function autofillPicks() {
 	if (!isPremium || !currentRecommendations?.topPicks) {
 		return;
 	}
 
-	// Get top 10 numbers
-	const numbers = currentRecommendations.topPicks.map(pick => pick.number);
+	const count = parseInt(document.getElementById("fill-count")?.value) || 10;
+	const minScore = parseFloat(document.getElementById("fill-min-score")?.value) || 0;
+	const numbers = getFilteredPicks(count, minScore);
+
+	if (numbers.length === 0) {
+		alert("No picks match your criteria");
+		return;
+	}
 
 	try {
 		const result = await chrome.runtime.sendMessage({
@@ -256,6 +272,59 @@ async function autofillPicks() {
 		}
 	} catch (e) {
 		console.error("Failed to autofill:", e);
+	}
+}
+
+// Start Keno autoplay
+async function startKenoAuto() {
+	if (!isPremium) return;
+
+	const minScore = parseFloat(document.getElementById("keno-auto-min-score")?.value) || 6.0;
+
+	try {
+		await chrome.runtime.sendMessage({
+			type: "START_KENO_AUTO",
+			settings: { minScore }
+		});
+		updateKenoAutoUI(true);
+	} catch (e) {
+		console.error("Failed to start Keno auto:", e);
+	}
+}
+
+// Stop Keno autoplay
+async function stopKenoAuto() {
+	try {
+		await chrome.runtime.sendMessage({ type: "STOP_KENO_AUTO" });
+		updateKenoAutoUI(false);
+	} catch (e) {
+		console.error("Failed to stop Keno auto:", e);
+	}
+}
+
+// Update Keno autoplay UI state
+function updateKenoAutoUI(isAutoPlaying) {
+	const statusEl = document.getElementById("keno-auto-status");
+	const modeEl = document.getElementById("keno-mode");
+	const startBtn = document.getElementById("keno-start-auto");
+	const stopBtn = document.getElementById("keno-stop-auto");
+
+	if (isAutoPlaying) {
+		if (statusEl) {
+			statusEl.textContent = "ON";
+			statusEl.className = "status-on";
+		}
+		if (modeEl) modeEl.textContent = "Auto";
+		if (startBtn) startBtn.disabled = true;
+		if (stopBtn) stopBtn.disabled = false;
+	} else {
+		if (statusEl) {
+			statusEl.textContent = "OFF";
+			statusEl.className = "status-off";
+		}
+		if (modeEl) modeEl.textContent = "Manual";
+		if (startBtn) startBtn.disabled = false;
+		if (stopBtn) stopBtn.disabled = true;
 	}
 }
 
@@ -467,6 +536,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 	document.getElementById("autofill-picks").addEventListener("click", () => {
 		autofillPicks();
 	});
+
+	// Keno autoplay start button
+	document.getElementById("keno-start-auto").addEventListener("click", () => {
+		startKenoAuto();
+	});
+
+	// Keno autoplay stop button
+	document.getElementById("keno-stop-auto").addEventListener("click", () => {
+		stopKenoAuto();
+	});
 });
 
 // Listen for state updates
@@ -488,5 +567,8 @@ chrome.runtime.onMessage.addListener((message) => {
 			// Then load stats (but skip re-fetching recommendations since we just got them)
 			loadKenoStatsOnly();
 		}
+	}
+	if (message.type === "KENO_AUTO_STATE_UPDATE") {
+		updateKenoAutoUI(message.isAutoPlaying);
 	}
 });
