@@ -20,6 +20,7 @@ function initKenoStats() {
     let currentRecommendations = null;
     let isPremium = false;
     let badgesEnabled = true;
+    let isInjectingBadges = false;  // Prevent re-entrant badge injection
 
     // Autoplay state
     let isKenoAutoPlaying = false;
@@ -422,42 +423,48 @@ function initKenoStats() {
     // Inject badges onto KENO tiles (uses pick.rank from server)
     function injectBadges(recommendations) {
         if (!recommendations || !recommendations.topPicks || !badgesEnabled) return;
+        if (isInjectingBadges) return;  // Prevent re-entrant calls
 
-        const tiles = document.querySelectorAll('button.tile[data-testid^="game-tile-"]');
-        if (tiles.length === 0) return;
+        isInjectingBadges = true;
+        try {
+            const tiles = document.querySelectorAll('button.tile[data-testid^="game-tile-"]');
+            if (tiles.length === 0) return;
 
-        // Remove existing badges first
-        document.querySelectorAll('.keno-recommendation-badge').forEach(b => b.remove());
+            // Remove existing badges first
+            document.querySelectorAll('.keno-recommendation-badge').forEach(b => b.remove());
 
-        for (const pick of recommendations.topPicks) {
-            // Use pick.rank from server (6-10 for free, 1-10 for premium)
-            const rank = pick.rank;
-            const dataIndex = pick.number - 1; // Convert 1-40 to 0-39
+            for (const pick of recommendations.topPicks) {
+                // Use pick.rank from server (6-10 for free, 1-10 for premium)
+                const rank = pick.rank;
+                const dataIndex = pick.number - 1; // Convert 1-40 to 0-39
 
-            const tile = document.querySelector(`button.tile[data-index="${dataIndex}"]`);
-            if (!tile) continue;
+                const tile = document.querySelector(`button.tile[data-index="${dataIndex}"]`);
+                if (!tile) continue;
 
-            // Ensure tile has relative positioning
-            tile.setAttribute('data-has-badge', 'true');
+                // Ensure tile has relative positioning
+                tile.setAttribute('data-has-badge', 'true');
 
-            // Create badge
-            const badge = document.createElement('div');
-            badge.className = 'keno-recommendation-badge';
+                // Create badge
+                const badge = document.createElement('div');
+                badge.className = 'keno-recommendation-badge';
 
-            // Set rank-specific styling based on actual rank from server
-            if (rank <= 3) {
-                badge.classList.add(`keno-badge-rank-${rank}`);
-                badge.textContent = rank.toString();
-            } else {
-                badge.classList.add('keno-badge-rank-other');
-                badge.textContent = rank <= 10 ? rank.toString() : '★';
+                // Set rank-specific styling based on actual rank from server
+                if (rank <= 3) {
+                    badge.classList.add(`keno-badge-rank-${rank}`);
+                    badge.textContent = rank.toString();
+                } else {
+                    badge.classList.add('keno-badge-rank-other');
+                    badge.textContent = rank <= 10 ? rank.toString() : '★';
+                }
+
+                badge.title = `#${rank} pick - Score: ${pick.score}`;
+                tile.appendChild(badge);
             }
 
-            badge.title = `#${rank} pick - Score: ${pick.score}`;
-            tile.appendChild(badge);
+            console.log('[KENO Stats] Badges injected for', recommendations.topPicks.length, 'picks');
+        } finally {
+            isInjectingBadges = false;
         }
-
-        console.log('[KENO Stats] Badges injected for', recommendations.topPicks.length, 'picks');
     }
 
     // Update badges when recommendations change
@@ -477,6 +484,9 @@ function initKenoStats() {
         }
 
         const observer = new MutationObserver((mutations) => {
+            // Skip if we're currently injecting badges (prevents infinite loop)
+            if (isInjectingBadges) return;
+
             // Check if tiles were affected
             const tilesAffected = mutations.some(m =>
                 m.target.classList?.contains('tile') ||
