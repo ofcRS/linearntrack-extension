@@ -1,9 +1,18 @@
+// Track if we've already initialized to avoid duplicate setup
+let kenoStatsInitialized = false;
+
 function initKenoStats() {
     // Only run on keno pages
     if (!window.location.href.includes('/casino/games/keno')) {
         console.log('[KENO Stats] Not a keno page, skipping initialization');
         return;
     }
+
+    // Clean up existing elements if re-initializing (SPA navigation)
+    const existingColdHeatmap = document.getElementById('keno-cold-heatmap');
+    const existingDeviationHeatmap = document.getElementById('keno-deviation-heatmap');
+    if (existingColdHeatmap) existingColdHeatmap.remove();
+    if (existingDeviationHeatmap) existingDeviationHeatmap.remove();
 
     let coldHeatmap = null;      // "Since last hit" heatmap
     let deviationHeatmap = null; // All-time deviation from average
@@ -529,3 +538,37 @@ if (document.readyState === 'loading') {
 } else {
     initKenoStats();
 }
+
+// Detect SPA navigation via History API (Stake.com uses client-side routing)
+function watchForNavigation() {
+    let lastUrl = window.location.href;
+
+    // Override pushState to detect navigation
+    const originalPushState = history.pushState;
+    history.pushState = function(...args) {
+        originalPushState.apply(this, args);
+        handleUrlChange();
+    };
+
+    // Override replaceState to detect navigation
+    const originalReplaceState = history.replaceState;
+    history.replaceState = function(...args) {
+        originalReplaceState.apply(this, args);
+        handleUrlChange();
+    };
+
+    // Listen for popstate (back/forward buttons)
+    window.addEventListener('popstate', handleUrlChange);
+
+    function handleUrlChange() {
+        const currentUrl = window.location.href;
+        if (currentUrl !== lastUrl) {
+            lastUrl = currentUrl;
+            // Small delay for DOM to update after SPA navigation
+            setTimeout(initKenoStats, 100);
+        }
+    }
+}
+
+// Start watching for SPA navigation immediately
+watchForNavigation();

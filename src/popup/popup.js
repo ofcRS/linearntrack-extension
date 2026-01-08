@@ -1,6 +1,6 @@
 // Popup script
 
-let currentGame = 'dice';
+let currentGame = 'keno';
 let isPremium = false;
 
 async function loadState() {
@@ -99,6 +99,10 @@ async function loadKenoStats() {
 async function loadKenoRecommendations() {
 	const picksList = document.getElementById("picks-list");
 	const confidenceEl = document.getElementById("picks-confidence");
+	const autofillBtn = document.getElementById("autofill-picks");
+
+	// Disable autofill button while loading
+	if (autofillBtn) autofillBtn.disabled = true;
 
 	try {
 		// Show loading state
@@ -116,13 +120,19 @@ async function loadKenoRecommendations() {
 		if (error) {
 			picksList.innerHTML = '<div class="picks-error">Failed to load. Try refreshing.</div>';
 			confidenceEl.textContent = 'Offline';
+			// Re-enable button if premium (even on error, cached data might be available)
+			if (autofillBtn && isPremium) autofillBtn.disabled = false;
 			return;
 		}
 
 		renderRecommendations(recommendations, tier);
+		// Re-enable button after successful load (only for premium users)
+		if (autofillBtn && isPremium) autofillBtn.disabled = false;
 	} catch (e) {
 		console.error("Failed to load recommendations:", e);
 		picksList.innerHTML = '<div class="picks-error">Failed to load. Try refreshing.</div>';
+		// Re-enable button on error for premium users
+		if (autofillBtn && isPremium) autofillBtn.disabled = false;
 	}
 }
 
@@ -296,6 +306,11 @@ function updateUI(state) {
 function switchGame(game) {
 	currentGame = game;
 
+	// Clear stale recommendations when switching to keno
+	if (game === 'keno') {
+		currentRecommendations = null;
+	}
+
 	// Update tab buttons
 	document.querySelectorAll('.game-tab').forEach(tab => {
 		tab.classList.toggle('active', tab.dataset.game === game);
@@ -320,7 +335,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 	await loadState();
 	await loadSettings();
-	await loadStats();
+	await loadKenoStats();
 
 	// Game tab switching
 	document.querySelectorAll('.game-tab').forEach(tab => {
