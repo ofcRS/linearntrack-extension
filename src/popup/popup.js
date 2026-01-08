@@ -3,6 +3,18 @@
 let currentGame = 'keno';
 let isPremium = false;
 
+async function loadLocalPremiumStatus() {
+	try {
+		const result = await chrome.runtime.sendMessage({ type: "GET_PREMIUM_STATUS" });
+		isPremium = result.isPremium || false;
+		updatePremiumUI();
+		return result;
+	} catch (e) {
+		console.error("Failed to load premium status:", e);
+		return { isPremium: false };
+	}
+}
+
 async function loadState() {
 	try {
 		const state = await chrome.runtime.sendMessage({ type: "GET_STATE" });
@@ -112,8 +124,11 @@ async function loadKenoRecommendations() {
 		const result = await chrome.runtime.sendMessage({ type: "GET_KENO_RECOMMENDATIONS" });
 		const { recommendations, tier, error } = result;
 
-		// Update isPremium based on tier for UI updates
-		isPremium = tier === "premium";
+		// Only upgrade to premium, don't downgrade based on server tier
+		// (session might not be ready yet even if license is valid)
+		if (tier === "premium") {
+			isPremium = true;
+		}
 		updatePremiumUI();
 
 		// Handle errors
@@ -206,6 +221,7 @@ function updatePremiumUI() {
 async function activateLicense() {
 	const keyInput = document.getElementById("license-key");
 	const errorEl = document.getElementById("license-error");
+	const activateBtn = document.getElementById("activate-license");
 	const key = keyInput.value.trim();
 
 	if (!key) {
@@ -214,6 +230,11 @@ async function activateLicense() {
 		return;
 	}
 
+	// Show loading state
+	activateBtn.disabled = true;
+	activateBtn.textContent = "Activating...";
+	errorEl.textContent = "";
+
 	try {
 		const result = await chrome.runtime.sendMessage({
 			type: "VALIDATE_LICENSE",
@@ -221,10 +242,16 @@ async function activateLicense() {
 		});
 
 		if (result.valid) {
-			errorEl.textContent = "License activated successfully!";
-			errorEl.classList.add("license-success");
 			isPremium = true;
 			updatePremiumUI();
+
+			if (result.sessionReady) {
+				errorEl.textContent = "License activated successfully!";
+			} else {
+				errorEl.textContent = "License valid! Connecting...";
+			}
+			errorEl.classList.add("license-success");
+
 			await loadKenoRecommendations();
 		} else {
 			errorEl.textContent = result.error || "Invalid license key";
@@ -234,6 +261,9 @@ async function activateLicense() {
 		console.error("Failed to validate license:", e);
 		errorEl.textContent = "Error validating license";
 		errorEl.classList.remove("license-success");
+	} finally {
+		activateBtn.disabled = false;
+		activateBtn.textContent = "Activate";
 	}
 }
 
@@ -419,6 +449,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 	// Track popup opened (daily unique)
 	chrome.runtime.sendMessage({ type: "TRACK_POPUP_OPENED" }).catch(() => {});
 
+	// Load local premium status FIRST (before recommendations)
+	await loadLocalPremiumStatus();
+
 	await loadState();
 	await loadSettings();
 	await loadKenoStats();
@@ -577,7 +610,10 @@ chrome.runtime.onMessage.addListener((message) => {
 		if (currentGame === 'keno') {
 			// Update recommendations first (if available) since they're the most current
 			if (message.recommendations) {
-				isPremium = message.tier === "premium";
+				// Only upgrade to premium, don't downgrade
+				if (message.tier === "premium") {
+					isPremium = true;
+				}
 				updatePremiumUI();
 				renderRecommendations(message.recommendations, message.tier || "free");
 			}

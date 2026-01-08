@@ -536,6 +536,9 @@ async function handleMessage(message, sender) {
 				};
 				await chrome.storage.local.set({ premiumStatus: newStatus });
 
+				// Start session and wait for it
+				const sessionResult = await startSession();
+
 				// Broadcast to all tabs
 				const tabs = await chrome.tabs.query({});
 				for (const tab of tabs) {
@@ -545,7 +548,12 @@ async function handleMessage(message, sender) {
 					}).catch(() => {});
 				}
 
-				return { success: true, valid: true, ...newStatus };
+				return {
+					success: true,
+					valid: true,
+					sessionReady: sessionResult.success,
+					...newStatus
+				};
 			}
 
 			return { success: false, valid: false, error: result.error || "Invalid license key" };
