@@ -512,24 +512,31 @@ function initKenoStats() {
 
     // Autofill numbers on the KENO grid
     function autofillNumbers(numbers) {
-        console.log('[KENO Stats] Autofilling numbers:', numbers);
+        console.log('[KENO Autofill] autofillNumbers() called with:', numbers);
 
         // First, clear any existing selections
         const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
+        console.log('[KENO Autofill] Clearing', selectedTiles.length, 'existing selections');
         selectedTiles.forEach(tile => {
             tile.click();
         });
 
         // Wait for deselections to process, then select new numbers
         setTimeout(() => {
+            console.log('[KENO Autofill] Starting selection of', numbers.length, 'numbers');
             numbers.forEach((num, idx) => {
                 setTimeout(() => {
                     // num is 1-40, data-index is 0-39
                     const dataIndex = num - 1;
                     const tile = document.querySelector(`button.tile[data-index="${dataIndex}"]`);
+                    console.log('[KENO Autofill] Tile lookup - num:', num, 'dataIndex:', dataIndex, 'found:', !!tile);
                     if (tile && tile.getAttribute('data-selected') !== 'true') {
                         tile.click();
-                        console.log('[KENO Stats] Selected number:', num);
+                        console.log('[KENO Autofill] Clicked tile for number:', num);
+                    } else if (!tile) {
+                        console.log('[KENO Autofill] Tile NOT FOUND for number:', num);
+                    } else {
+                        console.log('[KENO Autofill] Tile already selected:', num);
                     }
                 }, idx * 50); // Stagger clicks by 50ms
             });
@@ -645,6 +652,7 @@ function initKenoStats() {
                 break;
 
             case 'KENO_AUTOFILL':
+                console.log('[KENO Autofill] User script received message:', event.data.numbers);
                 autofillNumbers(event.data.numbers);
                 break;
 

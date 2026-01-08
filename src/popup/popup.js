@@ -278,19 +278,24 @@ function getFilteredPicks(maxCount, minScore) {
 
 // Enhanced autofill with parameters - fetches fresh recommendations to avoid stale data
 async function autofillPicks() {
+	console.log("[KENO Autofill] autofillPicks() called, isPremium:", isPremium);
 	if (!isPremium) {
+		console.log("[KENO Autofill] Blocked - not premium");
 		return;
 	}
 
 	const count = parseInt(document.getElementById("fill-count")?.value) || 10;
 	const minScore = parseFloat(document.getElementById("fill-min-score")?.value) || 0;
+	console.log("[KENO Autofill] Params - count:", count, "minScore:", minScore);
 
 	try {
 		// Fetch FRESH recommendations from server before autofilling
 		const result = await chrome.runtime.sendMessage({ type: "GET_KENO_RECOMMENDATIONS" });
 		const { recommendations, tier, error } = result;
+		console.log("[KENO Autofill] Fresh recommendations:", recommendations?.topPicks?.length, "picks, tier:", tier);
 
 		if (error || !recommendations?.topPicks) {
+			console.log("[KENO Autofill] Error or no picks:", error);
 			alert("Failed to get recommendations. Try again.");
 			return;
 		}
@@ -300,8 +305,10 @@ async function autofillPicks() {
 			.filter(pick => pick.score >= minScore)
 			.slice(0, count)
 			.map(pick => pick.number);
+		console.log("[KENO Autofill] Filtered numbers to fill:", numbers);
 
 		if (numbers.length === 0) {
+			console.log("[KENO Autofill] No picks match criteria");
 			alert("No picks match your criteria");
 			return;
 		}
@@ -309,6 +316,7 @@ async function autofillPicks() {
 		// Update UI and cache with fresh data
 		renderRecommendations(recommendations, tier);
 
+		console.log("[KENO Autofill] Sending to background:", numbers);
 		const autofillResult = await chrome.runtime.sendMessage({
 			type: "KENO_AUTOFILL",
 			numbers: numbers

@@ -560,26 +560,34 @@ async function handleMessage(message, sender) {
 		}
 
 		case "KENO_AUTOFILL": {
+			console.log("[KENO Autofill] Background received:", message.numbers);
+
 			// Check premium status first
 			const premiumData = await chrome.storage.local.get(["premiumStatus"]);
 			const isPremium = premiumData.premiumStatus?.isPremium || false;
+			console.log("[KENO Autofill] Premium check:", isPremium);
 
 			if (!isPremium) {
+				console.log("[KENO Autofill] Blocked - not premium");
 				return { success: false, error: "Premium required for autofill" };
 			}
 
 			// Forward to content script
 			const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+			console.log("[KENO Autofill] Active tab:", tabs[0]?.id, tabs[0]?.url);
+
 			if (tabs[0]?.id) {
+				console.log("[KENO Autofill] Forwarding to content script:", message.numbers);
 				chrome.tabs.sendMessage(tabs[0].id, {
 					type: "KENO_AUTOFILL",
 					numbers: message.numbers,
-				}).catch(() => {});
+				}).catch((e) => console.error("[KENO Autofill] Forward failed:", e));
 				// Track autofill usage
 				trackAutofillUsed();
 				return { success: true };
 			}
 
+			console.log("[KENO Autofill] No active tab found");
 			return { success: false, error: "No active tab found" };
 		}
 
