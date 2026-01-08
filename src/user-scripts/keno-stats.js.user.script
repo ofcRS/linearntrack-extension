@@ -21,6 +21,7 @@ function initKenoStats() {
     let isPremium = false;
     let badgesEnabled = true;
     let isInjectingBadges = false;  // Prevent re-entrant badge injection
+    let badgeObserver = null;  // Global reference for disconnect/reconnect
 
     // Autoplay state
     let isKenoAutoPlaying = false;
@@ -426,6 +427,12 @@ function initKenoStats() {
         if (isInjectingBadges) return;  // Prevent re-entrant calls
 
         isInjectingBadges = true;
+
+        // DISCONNECT observer to prevent mutation callbacks during injection
+        if (badgeObserver) {
+            badgeObserver.disconnect();
+        }
+
         try {
             const tiles = document.querySelectorAll('button.tile[data-testid^="game-tile-"]');
             if (tiles.length === 0) return;
@@ -464,6 +471,19 @@ function initKenoStats() {
             console.log('[KENO Stats] Badges injected for', recommendations.topPicks.length, 'picks');
         } finally {
             isInjectingBadges = false;
+
+            // RECONNECT observer after injection complete
+            if (badgeObserver) {
+                const gameContainer = document.querySelector('[data-testid="game-keno"]');
+                if (gameContainer) {
+                    badgeObserver.observe(gameContainer, {
+                        childList: true,
+                        subtree: true,
+                        attributes: true,
+                        attributeFilter: ['class', 'data-selected', 'data-game-tile-status']
+                    });
+                }
+            }
         }
     }
 
@@ -483,32 +503,57 @@ function initKenoStats() {
             return;
         }
 
-        const observer = new MutationObserver((mutations) => {
-            // Skip if we're currently injecting badges (prevents infinite loop)
+        badgeObserver = new MutationObserver((mutations) => {
+            // Skip if we're currently injecting badges (synchronous protection)
             if (isInjectingBadges) return;
 
-            // Check if tiles were affected
-            const tilesAffected = mutations.some(m =>
-                m.target.classList?.contains('tile') ||
-                m.target.closest?.('.tile') ||
-                m.addedNodes.length > 0
-            );
+            // SMART FILTERING: Only react to game-initiated changes, not our badge injections
+            const shouldUpdate = mutations.some(m => {
+                // ATTRIBUTE changes on tiles = game state (selection, reveal, etc)
+                if (m.type === 'attributes') {
+                    return m.target.classList?.contains('tile');
+                }
 
-            if (tilesAffected && currentRecommendations) {
+                // CHILDLIST changes - only react if TILES were added (Svelte re-render)
+                // NOT when we add/remove badge divs
+                if (m.type === 'childList') {
+                    // Check added nodes
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                        // Skip our badges - this is the key fix!
+                        if (node.classList?.contains('keno-recommendation-badge')) continue;
+                        // React if a tile was added
+                        if (node.classList?.contains('tile')) return true;
+                        // React if a container with tiles was added
+                        if (node.querySelector?.('.tile')) return true;
+                    }
+                    // Check removed nodes (tiles being removed = re-render)
+                    for (const node of m.removedNodes) {
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                        // Skip badge removals
+                        if (node.classList?.contains('keno-recommendation-badge')) continue;
+                        if (node.classList?.contains('tile')) return true;
+                    }
+                }
+
+                return false;
+            });
+
+            if (shouldUpdate && currentRecommendations) {
                 // Debounce badge re-injection
                 clearTimeout(window._badgeDebounce);
                 window._badgeDebounce = setTimeout(updateBadges, 100);
             }
         });
 
-        observer.observe(gameContainer, {
+        badgeObserver.observe(gameContainer, {
             childList: true,
             subtree: true,
             attributes: true,
             attributeFilter: ['class', 'data-selected', 'data-game-tile-status']
         });
 
-        console.log('[KENO Stats] Badge observer set up');
+        console.log('[KENO Stats] Badge observer set up with smart filtering');
     }
 
     function toggleBadges(enabled) {
