@@ -1,0 +1,399 @@
+function initDiceAutoplay() {
+    // Only run on dice pages
+    if (!window.location.href.includes('/casino/games/dice')) {
+        console.log('[Dice Auto] Not a dice page, skipping initialization');
+        return;
+    }
+
+    let isAutoPlaying = false;
+    let pendingTimeouts = []; // Track all pending timeouts for cancellation
+    let heatmapOverlay = null;
+    let heatmapEnabled = true;
+
+    // Helper to schedule action with tracking
+    function scheduleAction(fn, delay) {
+        const timeoutId = setTimeout(() => {
+            // Remove from tracking array
+            pendingTimeouts = pendingTimeouts.filter(id => id !== timeoutId);
+            // Only execute if still auto-playing
+            if (isAutoPlaying) {
+                fn();
+            } else {
+                console.log('[Dice Auto] Action skipped - auto-play stopped');
+            }
+        }, delay);
+        pendingTimeouts.push(timeoutId);
+        return timeoutId;
+    }
+
+    // Cancel all pending actions
+    function cancelAllPendingActions() {
+        console.log('[Dice Auto] Cancelling', pendingTimeouts.length, 'pending actions');
+        pendingTimeouts.forEach(id => clearTimeout(id));
+        pendingTimeouts = [];
+    }
+
+    // Make element draggable and resizable
+    function makeDraggableResizable(element, storageKey) {
+        let isDragging = false;
+        let isResizing = false;
+        let startX, startY, startLeft, startTop, startWidth, startHeight;
+
+        // Load saved position/size
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+            try {
+                const { left, top, scale } = JSON.parse(saved);
+                element.style.left = left + 'px';
+                element.style.top = top + 'px';
+                element.style.bottom = 'auto';
+                element.style.transform = `scale(${scale || 1})`;
+                element.dataset.scale = scale || 1;
+            } catch (e) {}
+        }
+
+        // Create resize handle
+        const resizeHandle = document.createElement('div');
+        resizeHandle.style.cssText = `
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 12px;
+            height: 12px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%);
+            border-radius: 2px;
+        `;
+        element.appendChild(resizeHandle);
+
+        // Drag functionality
+        element.addEventListener('mousedown', (e) => {
+            if (e.target === resizeHandle) return;
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = element.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop = rect.top;
+            element.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+
+        // Resize functionality
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = element.offsetWidth;
+            startHeight = element.offsetHeight;
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                element.style.left = (startLeft + dx) + 'px';
+                element.style.top = (startTop + dy) + 'px';
+                element.style.bottom = 'auto';
+                element.style.transform = `scale(${element.dataset.scale || 1})`;
+            } else if (isResizing) {
+                const dx = e.clientX - startX;
+                const scale = Math.max(0.5, Math.min(2, (startWidth + dx) / startWidth));
+                element.style.transform = `scale(${scale})`;
+                element.dataset.scale = scale;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging || isResizing) {
+                // Save position and scale
+                const rect = element.getBoundingClientRect();
+                const scale = parseFloat(element.dataset.scale) || 1;
+                localStorage.setItem(storageKey, JSON.stringify({
+                    left: rect.left / scale,
+                    top: rect.top / scale,
+                    scale: scale
+                }));
+            }
+            isDragging = false;
+            isResizing = false;
+            element.style.cursor = 'grab';
+        });
+
+        element.style.cursor = 'grab';
+    }
+
+    // Create heatmap overlay element
+    function createHeatmapOverlay() {
+        if (heatmapOverlay) return;
+
+        heatmapOverlay = document.createElement('div');
+        heatmapOverlay.id = 'dice-auto-heatmap';
+        heatmapOverlay.style.cssText = `
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 2px;
+            padding: 8px;
+            padding-right: 16px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            z-index: 9999;
+            font-family: monospace;
+            font-size: 11px;
+            transform-origin: top left;
+            user-select: none;
+        `;
+
+        // Create 10 range boxes - using DOM methods to avoid Trusted Types CSP
+        for (let i = 0; i < 10; i++) {
+            const box = document.createElement('div');
+            box.className = 'heatmap-range';
+            box.dataset.range = i;
+            box.style.cssText = `
+                width: 36px;
+                height: 40px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+                background: #333;
+                color: #fff;
+            `;
+
+            const rangeLabel = document.createElement('div');
+            rangeLabel.style.cssText = 'font-size: 9px; opacity: 0.7;';
+            rangeLabel.textContent = `${i * 10}-${(i + 1) * 10}`;
+
+            const sinceHitLabel = document.createElement('div');
+            sinceHitLabel.className = 'since-hit';
+            sinceHitLabel.style.cssText = 'font-weight: bold;';
+            sinceHitLabel.textContent = '0';
+
+            box.appendChild(rangeLabel);
+            box.appendChild(sinceHitLabel);
+            heatmapOverlay.appendChild(box);
+        }
+
+        document.body.appendChild(heatmapOverlay);
+        makeDraggableResizable(heatmapOverlay, 'dice-heatmap-position');
+        console.log('[Dice Auto] Heatmap overlay created');
+    }
+
+    // Update heatmap colors based on data
+    function updateHeatmap(rangeHits, rangeSinceLastHit, totalRolls) {
+        if (!heatmapOverlay || !heatmapEnabled) return;
+
+        const expectedHitsPerRange = totalRolls / 10;
+
+        for (let i = 0; i < 10; i++) {
+            const box = heatmapOverlay.querySelector(`[data-range="${i}"]`);
+            if (!box) continue;
+
+            const sinceHit = rangeSinceLastHit[i];
+            const hits = rangeHits[i];
+
+            // Update the "since hit" counter
+            box.querySelector('.since-hit').textContent = sinceHit;
+
+            // Calculate color based on how "cold" the range is
+            // Expected: should hit every ~10 rolls on average
+            const coldness = sinceHit / 10; // >1 means colder than expected
+
+            let bgColor;
+            if (coldness > 3) {
+                // Very cold - bright red
+                bgColor = '#dc2626';
+            } else if (coldness > 2) {
+                // Cold - red
+                bgColor = '#b91c1c';
+            } else if (coldness > 1.5) {
+                // Slightly cold - orange
+                bgColor = '#d97706';
+            } else if (coldness > 1) {
+                // Normal-ish - yellow
+                bgColor = '#ca8a04';
+            } else if (coldness > 0.5) {
+                // Recent - neutral
+                bgColor = '#555';
+            } else {
+                // Just hit - green
+                bgColor = '#16a34a';
+            }
+
+            box.style.background = bgColor;
+        }
+    }
+
+    function toggleHeatmap(enabled) {
+        heatmapEnabled = enabled;
+        if (heatmapOverlay) {
+            heatmapOverlay.style.display = enabled ? 'flex' : 'none';
+        }
+    }
+
+    const processDiceResponse = async (response) => {
+        try {
+            const data = await response.json();
+
+            // Check for dice roll response
+            if (data?.diceRoll) {
+                const roll = data.diceRoll;
+                const result = roll.state?.result;
+                const target = roll.state?.target;
+                const condition = roll.state?.condition;
+                const betAmount = roll.amount;
+                // Win if result matches condition
+                const won = condition === 'above'
+                    ? result > target
+                    : result < target;
+
+                console.log('[Dice Auto] Roll:', { result, target, condition, betAmount, won });
+
+                window.postMessage({
+                    type: 'DICE_ROLL',
+                    roll: {
+                        result,
+                        target,
+                        condition,
+                        multiplier: roll.payoutMultiplier,
+                        betAmount,
+                        won,
+                        payout: roll.payout,
+                        currency: roll.currency,
+                    }
+                }, '*');
+            }
+        } catch (e) {
+            console.error('[Dice Auto] Error processing response:', e);
+        }
+    };
+
+    function replaceFetch() {
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            const response = await originalFetch(...args);
+
+            // Check if this is a dice roll request
+            const url = args[0]?.url || args[0];
+            if (typeof url === 'string' && url.includes('/_api/casino/dice/roll')) {
+                const clone = response.clone();
+                processDiceResponse(clone);
+            }
+
+            return response;
+        };
+    }
+
+    // Set bet amount in the UI
+    function setBetAmount(amount) {
+        const input = document.querySelector('input[name="amount"]');
+        if (input) {
+            // Trigger React's onChange
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(input, amount.toFixed(8));
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        }
+        return false;
+    }
+
+    // Click the bet button
+    function clickBet() {
+        const betButton = document.querySelector('[data-testid="bet-button"]');
+        if (betButton && !betButton.disabled) {
+            betButton.click();
+            return true;
+        }
+        return false;
+    }
+
+    // Listen for commands from content script
+    window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+
+        switch (event.data.type) {
+            case 'DICE_SET_BET':
+                const amount = event.data.amount;
+                console.log('[Dice Auto] Setting bet amount:', amount);
+                setBetAmount(amount);
+                break;
+
+            case 'DICE_CLICK_BET':
+                console.log('[Dice Auto] Clicking bet button');
+                scheduleAction(() => clickBet(), 100);
+                break;
+
+            case 'DICE_START_AUTO':
+                console.log('[Dice Auto] Starting auto-play');
+                cancelAllPendingActions(); // Clear any stale actions
+                isAutoPlaying = true;
+                // Start with a 0-bet to begin tracking
+                setBetAmount(0);
+                scheduleAction(() => {
+                    if (clickBet()) {
+                        console.log('[Dice Auto] First bet clicked');
+                    } else {
+                        console.error('[Dice Auto] Failed to click bet button');
+                    }
+                }, 500);
+                break;
+
+            case 'DICE_STOP_AUTO':
+                console.log('[Dice Auto] Stopping auto-play');
+                isAutoPlaying = false;
+                cancelAllPendingActions(); // Cancel all pending bets immediately
+                break;
+
+            case 'DICE_EXECUTE_ACTION':
+                // Check if still auto-playing before executing
+                if (!isAutoPlaying) {
+                    console.log('[Dice Auto] Ignoring action - auto-play stopped');
+                    break;
+                }
+                const action = event.data.action;
+                console.log('[Dice Auto] Executing action:', action);
+
+                if (action.action === 'START_BETTING' || action.action === 'DOUBLE') {
+                    setBetAmount(action.amount);
+                    scheduleAction(() => clickBet(), 300);
+                } else if (action.action === 'CONTINUE_TRACKING') {
+                    // Keep betting 0.00
+                    scheduleAction(() => clickBet(), 300);
+                } else if (action.action === 'WIN' || action.action === 'STOP_LOSS') {
+                    // Reset to 0.00 and continue tracking
+                    setBetAmount(0);
+                    scheduleAction(() => clickBet(), 300);
+                }
+                break;
+
+            case 'DICE_UPDATE_HEATMAP':
+                updateHeatmap(
+                    event.data.rangeHits,
+                    event.data.rangeSinceLastHit,
+                    event.data.totalRolls
+                );
+                break;
+
+            case 'DICE_TOGGLE_HEATMAP':
+                toggleHeatmap(event.data.enabled);
+                break;
+        }
+    });
+
+    replaceFetch();
+    createHeatmapOverlay();
+    console.log('[Dice Auto] Autoplay script initialized');
+}
+
+// Initialize immediately or on DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDiceAutoplay);
+} else {
+    initDiceAutoplay();
+}

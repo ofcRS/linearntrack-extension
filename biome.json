@@ -1,0 +1,12 @@
+{
+	"files": {
+		"ignore": [
+			"dist/**",
+			".vscode/**",
+			"package-lock.json",
+			"node_modules/**",
+			"utils/stats.js",
+			"utils/chart.js"
+		]
+	}
+}

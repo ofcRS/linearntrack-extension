@@ -1,0 +1,14 @@
+{
+	"name": "stake-dice-auto",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "Auto-play dice on Stake with probability-based betting",
+	"scripts": {
+		"build": "bun esbuild.config.js",
+		"watch": "WATCH=true bun esbuild.config.js"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"esbuild": "^0.17.19"
+	}
+}

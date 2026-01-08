@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dice Stats - Charts</title>
+    <link rel="stylesheet" href="stats.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Dice Statistics</h1>
+
+        <div class="summary">
+            <div class="stat-card">
+                <div class="stat-value" id="total-rolls">0</div>
+                <div class="stat-label">Total Rolls</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="win-rate">0%</div>
+                <div class="stat-label">Win Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="profit">0.00</div>
+                <div class="stat-label">Total Profit</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="max-streak">0</div>
+                <div class="stat-label">Max Loss Streak</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="detected-multiplier">-</div>
+                <div class="stat-label">Multiplier</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="win-chance">-</div>
+                <div class="stat-label">Win Chance</div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h2>Range Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="distribution-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h2>Coldest Ranges</h2>
+                <table id="coldest-table">
+                    <thead>
+                        <tr>
+                            <th>Range</th>
+                            <th>Since Last Hit</th>
+                            <th>Total Hits</th>
+                            <th>Expected</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="chart-card full-width">
+            <h2>Profit Over Time</h2>
+            <div class="chart-container large">
+                <canvas id="profit-chart"></canvas>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="refresh-btn" class="btn">Refresh Data</button>
+            <button id="reset-btn" class="btn btn-danger">Reset All Stats</button>
+        </div>
+    </div>
+
+    <script src="stats.js" type="module"></script>
+</body>
+</html>

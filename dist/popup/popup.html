@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>LinearnTrack</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <h1>LinearnTrack</h1>
+
+    <!-- Game Tabs -->
+    <div id="game-tabs">
+        <button class="game-tab active" data-game="dice">Dice</button>
+        <button class="game-tab" data-game="keno">KENO</button>
+    </div>
+
+    <!-- DICE Panel -->
+    <div id="dice-panel" class="game-panel active">
+        <div id="status" class="status-box">
+            <div class="status-row">
+                <span>Status:</span>
+                <span id="auto-status" class="status-off">OFF</span>
+            </div>
+            <div class="status-row">
+                <span>Phase:</span>
+                <span id="phase">Tracking</span>
+            </div>
+            <div class="status-row">
+                <span>Detected:</span>
+                <span id="detected-info">-</span>
+            </div>
+            <div class="status-row">
+                <span>Losses:</span>
+                <span id="losses">0</span>
+            </div>
+            <div class="status-row">
+                <span>Probability:</span>
+                <span id="probability">100%</span>
+            </div>
+            <div class="status-row">
+                <span>Doubles:</span>
+                <span id="doubles">0</span>
+            </div>
+        </div>
+
+        <div id="controls">
+            <button id="start-btn" class="btn btn-start">Start Auto</button>
+            <button id="stop-btn" class="btn btn-stop" disabled>Stop</button>
+        </div>
+
+        <div id="tools">
+            <button id="open-charts" class="btn btn-tool">Open Charts</button>
+            <label class="toggle-row">
+                <input type="checkbox" id="heatmap-toggle" checked>
+                <span>Heatmap</span>
+            </label>
+        </div>
+
+        <div id="settings">
+            <h2>Settings</h2>
+
+            <div class="setting-row">
+                <label for="loss-threshold">Loss Threshold:</label>
+                <input type="number" id="loss-threshold" min="1" max="100" value="17">
+            </div>
+
+            <div class="setting-row">
+                <label for="max-doubles">Max Doubles:</label>
+                <input type="number" id="max-doubles" min="1" max="20" value="10">
+            </div>
+
+            <div class="setting-row">
+                <label for="base-bet">Base Bet:</label>
+                <input type="text" id="base-bet" value="0.00000001">
+            </div>
+
+            <button id="save-settings" class="btn btn-save">Save Settings</button>
+            <p class="setting-note">Target & multiplier auto-detected from page</p>
+        </div>
+
+        <div id="stats">
+            <h2>Stats</h2>
+            <div class="stat-row">
+                <span>Total Rolls:</span>
+                <span id="total-rolls">0</span>
+            </div>
+            <div class="stat-row">
+                <span>Wins:</span>
+                <span id="total-wins">0</span>
+            </div>
+            <div class="stat-row">
+                <span>Max Streak:</span>
+                <span id="max-streak">0</span>
+            </div>
+            <div class="stat-row">
+                <span>Profit:</span>
+                <span id="profit">0.00000000</span>
+            </div>
+            <button id="reset-stats" class="btn btn-reset">Reset Stats</button>
+        </div>
+    </div>
+
+    <!-- KENO Panel -->
+    <div id="keno-panel" class="game-panel">
+        <div class="status-box">
+            <div class="status-row">
+                <span>Mode:</span>
+                <span class="keno-mode">Stats Only</span>
+            </div>
+        </div>
+
+        <div id="keno-tools">
+            <label class="toggle-row">
+                <input type="checkbox" id="keno-heatmap-toggle" checked>
+                <span>Show Heatmap (8x5)</span>
+            </label>
+            <label class="toggle-row">
+                <input type="checkbox" id="keno-badges-toggle" checked>
+                <span>Show Tile Badges</span>
+            </label>
+        </div>
+
+        <!-- AI Picks Section (Premium Feature) -->
+        <div id="keno-picks-section" class="picks-section">
+            <div class="picks-header">
+                <h3>AI Picks</h3>
+                <span id="picks-premium-tag" class="premium-tag">PRO</span>
+            </div>
+            <div id="picks-confidence" class="confidence-badge">Confidence: -</div>
+            <div id="picks-list" class="picks-list">
+                <!-- Picks will be rendered here -->
+                <div class="picks-empty">Play some rounds to get recommendations</div>
+            </div>
+            <div id="picks-unlock" class="picks-unlock">
+                <p>Top 5 picks are blurred. Upgrade to PRO to unlock.</p>
+                <button id="get-pro" class="btn btn-pro">Get PRO Access</button>
+                <div class="license-divider">or enter license key</div>
+                <div class="license-section">
+                    <input type="text" id="license-key" placeholder="LT-XXXX-XXXX-XXXX" maxlength="19">
+                    <button id="activate-license" class="btn btn-activate">Activate</button>
+                </div>
+                <div id="license-error" class="license-error"></div>
+            </div>
+            <div id="autofill-section" class="autofill-section" style="display: none;">
+                <button id="autofill-picks" class="btn btn-autofill">Autofill Top 10</button>
+            </div>
+        </div>
+
+        <div id="keno-stats">
+            <h2>KENO Stats</h2>
+            <div class="stat-row">
+                <span>Total Rounds:</span>
+                <span id="keno-total-rounds">0</span>
+            </div>
+            <div class="stat-row">
+                <span>Last Matches:</span>
+                <span id="keno-last-matches">-</span>
+            </div>
+
+            <h3>Coldest Numbers</h3>
+            <div id="keno-coldest" class="coldest-list">
+                <span class="cold-item">-</span>
+            </div>
+
+            <h3>Match Distribution</h3>
+            <div id="keno-match-dist" class="match-dist">
+                <span>No data yet</span>
+            </div>
+
+            <button id="reset-keno-stats" class="btn btn-reset">Reset KENO Stats</button>
+        </div>
+    </div>
+
+    <script src="popup.js" type="module"></script>
+</body>
+</html>

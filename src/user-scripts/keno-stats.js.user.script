@@ -1,0 +1,531 @@
+function initKenoStats() {
+    // Only run on keno pages
+    if (!window.location.href.includes('/casino/games/keno')) {
+        console.log('[KENO Stats] Not a keno page, skipping initialization');
+        return;
+    }
+
+    let coldHeatmap = null;      // "Since last hit" heatmap
+    let deviationHeatmap = null; // All-time deviation from average
+    let heatmapEnabled = true;
+    let currentRecommendations = null;
+    let isPremium = false;
+    let badgesEnabled = true;
+
+    // Make element draggable and resizable
+    function makeDraggableResizable(element, storageKey) {
+        let isDragging = false;
+        let isResizing = false;
+        let startX, startY, startLeft, startTop, startWidth, startHeight;
+
+        // Load saved position/size
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+            try {
+                const { left, top, scale } = JSON.parse(saved);
+                element.style.left = left + 'px';
+                element.style.top = top + 'px';
+                element.style.bottom = 'auto';
+                element.style.transform = `scale(${scale || 1})`;
+                element.dataset.scale = scale || 1;
+            } catch (e) {}
+        }
+
+        // Create resize handle
+        const resizeHandle = document.createElement('div');
+        resizeHandle.style.cssText = `
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 12px;
+            height: 12px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.3) 50%);
+            border-radius: 2px;
+        `;
+        element.appendChild(resizeHandle);
+
+        // Drag functionality
+        element.addEventListener('mousedown', (e) => {
+            if (e.target === resizeHandle) return;
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = element.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop = rect.top;
+            element.style.cursor = 'grabbing';
+            e.preventDefault();
+        });
+
+        // Resize functionality
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            startWidth = element.offsetWidth;
+            startHeight = element.offsetHeight;
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const dx = e.clientX - startX;
+                const dy = e.clientY - startY;
+                element.style.left = (startLeft + dx) + 'px';
+                element.style.top = (startTop + dy) + 'px';
+                element.style.bottom = 'auto';
+                element.style.transform = `scale(${element.dataset.scale || 1})`;
+            } else if (isResizing) {
+                const dx = e.clientX - startX;
+                const scale = Math.max(0.5, Math.min(2, (startWidth + dx) / startWidth));
+                element.style.transform = `scale(${scale})`;
+                element.dataset.scale = scale;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isDragging || isResizing) {
+                // Save position and scale
+                const rect = element.getBoundingClientRect();
+                const scale = parseFloat(element.dataset.scale) || 1;
+                localStorage.setItem(storageKey, JSON.stringify({
+                    left: rect.left / scale,
+                    top: rect.top / scale,
+                    scale: scale
+                }));
+            }
+            isDragging = false;
+            isResizing = false;
+            element.style.cursor = 'grab';
+        });
+
+        element.style.cursor = 'grab';
+    }
+
+    // Create a heatmap grid
+    function createHeatmapGrid(id, title, defaultBottom, defaultLeft) {
+        const container = document.createElement('div');
+        container.id = id;
+        container.style.cssText = `
+            position: fixed;
+            bottom: ${defaultBottom}px;
+            left: ${defaultLeft};
+            display: flex;
+            flex-direction: column;
+            padding: 8px;
+            padding-right: 18px;
+            padding-bottom: 14px;
+            background: rgba(0, 0, 0, 0.85);
+            border-radius: 8px;
+            z-index: 9999;
+            font-family: monospace;
+            font-size: 11px;
+            transform-origin: top left;
+            user-select: none;
+        `;
+
+        // Title
+        const titleEl = document.createElement('div');
+        titleEl.style.cssText = 'font-size: 10px; color: #888; margin-bottom: 6px; text-align: center;';
+        titleEl.textContent = title;
+        container.appendChild(titleEl);
+
+        // Grid
+        const grid = document.createElement('div');
+        grid.className = 'heatmap-grid';
+        grid.style.cssText = `
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 3px;
+        `;
+
+        // Create 40 number boxes (0-39)
+        for (let i = 0; i < 40; i++) {
+            const box = document.createElement('div');
+            box.className = 'keno-number';
+            box.dataset.number = i;
+            box.style.cssText = `
+                width: 32px;
+                height: 32px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                border-radius: 4px;
+                background: #333;
+                color: #fff;
+                cursor: default;
+            `;
+
+            const numLabel = document.createElement('div');
+            numLabel.style.cssText = 'font-size: 10px; font-weight: bold;';
+            numLabel.textContent = i + 1; // Display 1-40
+
+            const valueLabel = document.createElement('div');
+            valueLabel.className = 'value-label';
+            valueLabel.style.cssText = 'font-size: 8px; opacity: 0.8;';
+            valueLabel.textContent = '0';
+
+            box.appendChild(numLabel);
+            box.appendChild(valueLabel);
+            grid.appendChild(box);
+        }
+
+        container.appendChild(grid);
+        return container;
+    }
+
+    // Create both heatmaps
+    function createHeatmapOverlays() {
+        if (coldHeatmap) return;
+
+        // Cold heatmap (since last hit) - bottom center
+        coldHeatmap = createHeatmapGrid('keno-cold-heatmap', 'Rounds Since Hit', 10, '50%');
+        coldHeatmap.style.transform = 'translateX(-50%)';
+        document.body.appendChild(coldHeatmap);
+        makeDraggableResizable(coldHeatmap, 'keno-cold-heatmap-position');
+
+        // Deviation heatmap (all-time vs expected) - bottom left
+        deviationHeatmap = createHeatmapGrid('keno-deviation-heatmap', 'Deviation from Average (%)', 10, '10px');
+        document.body.appendChild(deviationHeatmap);
+        makeDraggableResizable(deviationHeatmap, 'keno-deviation-heatmap-position');
+
+        console.log('[KENO Stats] Both heatmaps created');
+    }
+
+    // Update cold heatmap (since last hit)
+    function updateColdHeatmap(numberSinceLastHit) {
+        if (!coldHeatmap || !heatmapEnabled) return;
+
+        const expectedInterval = 4; // Each number should hit every 4 rounds on average
+
+        for (let i = 0; i < 40; i++) {
+            const box = coldHeatmap.querySelector(`[data-number="${i}"]`);
+            if (!box) continue;
+
+            const sinceHit = numberSinceLastHit[i];
+            box.querySelector('.value-label').textContent = sinceHit;
+
+            // Color based on coldness
+            const coldness = sinceHit / expectedInterval;
+            let bgColor;
+            if (coldness > 4) bgColor = '#dc2626';      // Very cold - bright red
+            else if (coldness > 3) bgColor = '#b91c1c'; // Cold - red
+            else if (coldness > 2) bgColor = '#d97706'; // Moderately cold - orange
+            else if (coldness > 1.5) bgColor = '#ca8a04'; // Slightly cold - yellow
+            else if (coldness > 0.5) bgColor = '#555';  // Normal - gray
+            else bgColor = '#16a34a';                    // Just hit - green
+
+            box.style.background = bgColor;
+        }
+    }
+
+    // Update deviation heatmap (all-time stats vs expected)
+    function updateDeviationHeatmap(numberHits, totalRounds) {
+        if (!deviationHeatmap || !heatmapEnabled || totalRounds < 10) return;
+
+        // Expected hits per number = totalRounds * (10/40) = totalRounds * 0.25
+        const expectedHits = totalRounds * 0.25;
+
+        for (let i = 0; i < 40; i++) {
+            const box = deviationHeatmap.querySelector(`[data-number="${i}"]`);
+            if (!box) continue;
+
+            const hits = numberHits[i];
+            // Deviation as percentage: ((actual - expected) / expected) * 100
+            const deviationPercent = ((hits - expectedHits) / expectedHits) * 100;
+
+            // Show deviation with sign
+            const sign = deviationPercent >= 0 ? '+' : '';
+            box.querySelector('.value-label').textContent = `${sign}${deviationPercent.toFixed(0)}%`;
+
+            // Color: red = under average (cold), green = over average (hot)
+            let bgColor;
+            if (deviationPercent < -20) bgColor = '#dc2626';      // Way under - bright red
+            else if (deviationPercent < -10) bgColor = '#b91c1c'; // Under - red
+            else if (deviationPercent < -5) bgColor = '#d97706';  // Slightly under - orange
+            else if (deviationPercent < 5) bgColor = '#555';      // Normal range - gray
+            else if (deviationPercent < 10) bgColor = '#65a30d';  // Slightly over - light green
+            else if (deviationPercent < 20) bgColor = '#16a34a';  // Over - green
+            else bgColor = '#15803d';                              // Way over - dark green
+
+            box.style.background = bgColor;
+        }
+    }
+
+    function toggleHeatmaps(enabled) {
+        heatmapEnabled = enabled;
+        if (coldHeatmap) {
+            coldHeatmap.style.display = enabled ? 'flex' : 'none';
+        }
+        if (deviationHeatmap) {
+            deviationHeatmap.style.display = enabled ? 'flex' : 'none';
+        }
+    }
+
+    // Inject badge styles into the page
+    function injectBadgeStyles() {
+        if (document.getElementById('keno-badge-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'keno-badge-styles';
+        style.textContent = `
+            .keno-recommendation-badge {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 9px;
+                font-weight: bold;
+                z-index: 10;
+                pointer-events: none;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                transition: all 0.2s ease;
+            }
+            .keno-badge-rank-1 { background: linear-gradient(135deg, #ffd700, #ffec8b); color: #000; }
+            .keno-badge-rank-2 { background: linear-gradient(135deg, #c0c0c0, #e8e8e8); color: #000; }
+            .keno-badge-rank-3 { background: linear-gradient(135deg, #cd7f32, #daa520); color: #000; }
+            .keno-badge-rank-other { background: linear-gradient(135deg, #00d4aa, #00f5c4); color: #000; }
+            /* Blur CSS removed - server now gates data instead */
+            button.tile[data-has-badge="true"] {
+                position: relative !important;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Inject badges onto KENO tiles (uses pick.rank from server)
+    function injectBadges(recommendations) {
+        if (!recommendations || !recommendations.topPicks || !badgesEnabled) return;
+
+        const tiles = document.querySelectorAll('button.tile[data-testid^="game-tile-"]');
+        if (tiles.length === 0) return;
+
+        // Remove existing badges first
+        document.querySelectorAll('.keno-recommendation-badge').forEach(b => b.remove());
+
+        for (const pick of recommendations.topPicks) {
+            // Use pick.rank from server (6-10 for free, 1-10 for premium)
+            const rank = pick.rank;
+            const dataIndex = pick.number - 1; // Convert 1-40 to 0-39
+
+            const tile = document.querySelector(`button.tile[data-index="${dataIndex}"]`);
+            if (!tile) continue;
+
+            // Ensure tile has relative positioning
+            tile.setAttribute('data-has-badge', 'true');
+
+            // Create badge
+            const badge = document.createElement('div');
+            badge.className = 'keno-recommendation-badge';
+
+            // Set rank-specific styling based on actual rank from server
+            if (rank <= 3) {
+                badge.classList.add(`keno-badge-rank-${rank}`);
+                badge.textContent = rank.toString();
+            } else {
+                badge.classList.add('keno-badge-rank-other');
+                badge.textContent = rank <= 10 ? rank.toString() : '★';
+            }
+
+            badge.title = `#${rank} pick - Score: ${pick.score}`;
+            tile.appendChild(badge);
+        }
+
+        console.log('[KENO Stats] Badges injected for', recommendations.topPicks.length, 'picks');
+    }
+
+    // Update badges when recommendations change
+    function updateBadges() {
+        if (currentRecommendations) {
+            injectBadges(currentRecommendations);
+        }
+    }
+
+    // Watch for tile re-renders (Svelte reactivity)
+    function setupBadgeObserver() {
+        const gameContainer = document.querySelector('[data-testid="game-keno"]');
+        if (!gameContainer) {
+            // Retry after delay if container not found yet
+            setTimeout(setupBadgeObserver, 1000);
+            return;
+        }
+
+        const observer = new MutationObserver((mutations) => {
+            // Check if tiles were affected
+            const tilesAffected = mutations.some(m =>
+                m.target.classList?.contains('tile') ||
+                m.target.closest?.('.tile') ||
+                m.addedNodes.length > 0
+            );
+
+            if (tilesAffected && currentRecommendations) {
+                // Debounce badge re-injection
+                clearTimeout(window._badgeDebounce);
+                window._badgeDebounce = setTimeout(updateBadges, 100);
+            }
+        });
+
+        observer.observe(gameContainer, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'data-selected', 'data-game-tile-status']
+        });
+
+        console.log('[KENO Stats] Badge observer set up');
+    }
+
+    function toggleBadges(enabled) {
+        badgesEnabled = enabled;
+        if (!enabled) {
+            document.querySelectorAll('.keno-recommendation-badge').forEach(b => b.remove());
+        } else {
+            updateBadges();
+        }
+    }
+
+    // Autofill numbers on the KENO grid
+    function autofillNumbers(numbers) {
+        console.log('[KENO Stats] Autofilling numbers:', numbers);
+
+        // First, clear any existing selections
+        const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
+        selectedTiles.forEach(tile => {
+            tile.click();
+        });
+
+        // Wait for deselections to process, then select new numbers
+        setTimeout(() => {
+            numbers.forEach((num, idx) => {
+                setTimeout(() => {
+                    // num is 1-40, data-index is 0-39
+                    const dataIndex = num - 1;
+                    const tile = document.querySelector(`button.tile[data-index="${dataIndex}"]`);
+                    if (tile && tile.getAttribute('data-selected') !== 'true') {
+                        tile.click();
+                        console.log('[KENO Stats] Selected number:', num);
+                    }
+                }, idx * 50); // Stagger clicks by 50ms
+            });
+        }, 100);
+    }
+
+    // Process KENO API response
+    const processKenoResponse = async (response) => {
+        try {
+            const data = await response.json();
+
+            // Check for KENO bet response
+            if (data?.kenoBet) {
+                const bet = data.kenoBet;
+                const drawnNumbers = bet.state?.drawnNumbers || [];
+                const selectedNumbers = bet.state?.selectedNumbers || [];
+                const risk = bet.state?.risk || 'medium';
+
+                // Calculate matches
+                const matches = selectedNumbers.filter(n => drawnNumbers.includes(n)).length;
+
+                console.log('[KENO Stats] Round:', {
+                    drawn: drawnNumbers,
+                    selected: selectedNumbers,
+                    matches,
+                    risk,
+                    payout: bet.payout,
+                    multiplier: bet.payoutMultiplier
+                });
+
+                // Send to background for stats tracking
+                window.postMessage({
+                    type: 'KENO_ROUND',
+                    round: {
+                        drawnNumbers,
+                        selectedNumbers,
+                        matches,
+                        risk,
+                        betAmount: bet.amount,
+                        payout: bet.payout,
+                        payoutMultiplier: bet.payoutMultiplier,
+                        currency: bet.currency,
+                    }
+                }, '*');
+            }
+        } catch (e) {
+            console.error('[KENO Stats] Error processing response:', e);
+        }
+    };
+
+    // Replace fetch to intercept KENO API calls
+    function replaceFetch() {
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            const response = await originalFetch(...args);
+
+            // Check if this is a KENO bet request
+            const url = args[0]?.url || args[0];
+            if (typeof url === 'string' && url.includes('/_api/casino/keno/bet')) {
+                const clone = response.clone();
+                processKenoResponse(clone);
+            }
+
+            return response;
+        };
+    }
+
+    // Listen for commands from content script
+    window.addEventListener('message', (event) => {
+        if (event.source !== window) return;
+
+        switch (event.data.type) {
+            case 'KENO_UPDATE_HEATMAP':
+                updateColdHeatmap(event.data.numberSinceLastHit);
+                updateDeviationHeatmap(event.data.numberHits, event.data.totalRounds);
+                break;
+
+            case 'KENO_TOGGLE_HEATMAP':
+                toggleHeatmaps(event.data.enabled);
+                break;
+
+            case 'KENO_UPDATE_RECOMMENDATIONS':
+                currentRecommendations = event.data.recommendations;
+                // tier is now "premium", "free", or "offline" - but we don't need it
+                // because server already gated the data
+                injectBadges(currentRecommendations);
+                break;
+
+            case 'KENO_PREMIUM_STATUS_CHANGED':
+                // Premium status changed, but badges will update on next round
+                // when server returns new recommendations
+                updateBadges();
+                break;
+
+            case 'KENO_TOGGLE_BADGES':
+                toggleBadges(event.data.enabled);
+                break;
+
+            case 'KENO_AUTOFILL':
+                autofillNumbers(event.data.numbers);
+                break;
+        }
+    });
+
+    replaceFetch();
+    createHeatmapOverlays();
+    injectBadgeStyles();
+    setupBadgeObserver();
+    console.log('[KENO Stats] Stats script initialized with badge support');
+}
+
+// Initialize immediately or on DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initKenoStats);
+} else {
+    initKenoStats();
+}
