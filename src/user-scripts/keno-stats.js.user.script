@@ -586,12 +586,18 @@ function initKenoStats() {
         // Helper to check if this request is still active
         const isStillActive = () => currentAutofillRequestId === requestId;
 
-        // First, clear any existing selections
-        const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
-        console.log('[KENO Autofill] Clearing', selectedTiles.length, 'existing selections');
-        selectedTiles.forEach(tile => {
-            tile.click();
-        });
+        // Click "Clear Table" button to reliably clear all selections
+        // (DOM selectors are unreliable due to Svelte's async state updates)
+        const clearTableBtn = document.querySelector('button[data-testid="game-clear-table"]');
+        if (clearTableBtn) {
+            console.log('[KENO Autofill] Clicking Clear Table button');
+            clearTableBtn.click();
+        } else {
+            // Fallback: manually clear selected tiles
+            const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
+            console.log('[KENO Autofill] Clear Table not found, clearing', selectedTiles.length, 'tiles manually');
+            selectedTiles.forEach(tile => tile.click());
+        }
 
         // Wait for deselections to process, then select new numbers
         const clearTimeoutId = setTimeout(() => {
