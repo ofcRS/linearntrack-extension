@@ -88,9 +88,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }, "*");
     sendResponse({ success: true });
   } else if (message.type === "KENO_AUTOFILL") {
+    console.log("[KENO Autofill] Content script received:", message.numbers, "requestId:", message.requestId);
     window.postMessage({
       type: "KENO_AUTOFILL",
-      numbers: message.numbers
+      numbers: message.numbers,
+      requestId: message.requestId
+    }, "*");
+    console.log("[KENO Autofill] Posted to page window");
+    sendResponse({ success: true });
+  } else if (message.type === "KENO_START_AUTO") {
+    window.postMessage({
+      type: "KENO_START_AUTO",
+      settings: message.settings
+    }, "*");
+    sendResponse({ success: true });
+  } else if (message.type === "KENO_STOP_AUTO") {
+    window.postMessage({
+      type: "KENO_STOP_AUTO"
     }, "*");
     sendResponse({ success: true });
   }

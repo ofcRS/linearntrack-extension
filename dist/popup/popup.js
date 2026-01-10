@@ -1,7 +1,19 @@
 // Popup script
 
-let currentGame = 'dice';
+let currentGame = 'keno';
 let isPremium = false;
+
+async function loadLocalPremiumStatus() {
+	try {
+		const result = await chrome.runtime.sendMessage({ type: "GET_PREMIUM_STATUS" });
+		isPremium = result.isPremium || false;
+		updatePremiumUI();
+		return result;
+	} catch (e) {
+		console.error("Failed to load premium status:", e);
+		return { isPremium: false };
+	}
+}
 
 async function loadState() {
 	try {
@@ -99,6 +111,10 @@ async function loadKenoStats() {
 async function loadKenoRecommendations() {
 	const picksList = document.getElementById("picks-list");
 	const confidenceEl = document.getElementById("picks-confidence");
+	const autofillBtn = document.getElementById("autofill-picks");
+
+	// Disable autofill button while loading
+	if (autofillBtn) autofillBtn.disabled = true;
 
 	try {
 		// Show loading state
@@ -108,21 +124,30 @@ async function loadKenoRecommendations() {
 		const result = await chrome.runtime.sendMessage({ type: "GET_KENO_RECOMMENDATIONS" });
 		const { recommendations, tier, error } = result;
 
-		// Update isPremium based on tier for UI updates
-		isPremium = tier === "premium";
+		// Only upgrade to premium, don't downgrade based on server tier
+		// (session might not be ready yet even if license is valid)
+		if (tier === "premium") {
+			isPremium = true;
+		}
 		updatePremiumUI();
 
 		// Handle errors
 		if (error) {
 			picksList.innerHTML = '<div class="picks-error">Failed to load. Try refreshing.</div>';
 			confidenceEl.textContent = 'Offline';
+			// Re-enable button if premium (even on error, cached data might be available)
+			if (autofillBtn && isPremium) autofillBtn.disabled = false;
 			return;
 		}
 
 		renderRecommendations(recommendations, tier);
+		// Re-enable button after successful load (only for premium users)
+		if (autofillBtn && isPremium) autofillBtn.disabled = false;
 	} catch (e) {
 		console.error("Failed to load recommendations:", e);
 		picksList.innerHTML = '<div class="picks-error">Failed to load. Try refreshing.</div>';
+		// Re-enable button on error for premium users
+		if (autofillBtn && isPremium) autofillBtn.disabled = false;
 	}
 }
 
@@ -196,6 +221,7 @@ function updatePremiumUI() {
 async function activateLicense() {
 	const keyInput = document.getElementById("license-key");
 	const errorEl = document.getElementById("license-error");
+	const activateBtn = document.getElementById("activate-license");
 	const key = keyInput.value.trim();
 
 	if (!key) {
@@ -204,6 +230,11 @@ async function activateLicense() {
 		return;
 	}
 
+	// Show loading state
+	activateBtn.disabled = true;
+	activateBtn.textContent = "Activating...";
+	errorEl.textContent = "";
+
 	try {
 		const result = await chrome.runtime.sendMessage({
 			type: "VALIDATE_LICENSE",
@@ -211,10 +242,16 @@ async function activateLicense() {
 		});
 
 		if (result.valid) {
-			errorEl.textContent = "License activated successfully!";
-			errorEl.classList.add("license-success");
 			isPremium = true;
 			updatePremiumUI();
+
+			if (result.sessionReady) {
+				errorEl.textContent = "License activated successfully!";
+			} else {
+				errorEl.textContent = "License valid! Connecting...";
+			}
+			errorEl.classList.add("license-success");
+
 			await loadKenoRecommendations();
 		} else {
 			errorEl.textContent = result.error || "Invalid license key";
@@ -224,28 +261,128 @@ async function activateLicense() {
 		console.error("Failed to validate license:", e);
 		errorEl.textContent = "Error validating license";
 		errorEl.classList.remove("license-success");
+	} finally {
+		activateBtn.disabled = false;
+		activateBtn.textContent = "Activate";
 	}
 }
 
+// Get filtered picks based on count and min score
+function getFilteredPicks(maxCount, minScore) {
+	if (!currentRecommendations?.topPicks) return [];
+	return currentRecommendations.topPicks
+		.filter(pick => pick.score >= minScore)
+		.slice(0, maxCount)
+		.map(pick => pick.number);
+}
+
+// Enhanced autofill with parameters - fetches fresh recommendations to avoid stale data
 async function autofillPicks() {
-	if (!isPremium || !currentRecommendations?.topPicks) {
+	console.log("[KENO Autofill] autofillPicks() called, isPremium:", isPremium);
+	if (!isPremium) {
+		console.log("[KENO Autofill] Blocked - not premium");
 		return;
 	}
 
-	// Get top 10 numbers
-	const numbers = currentRecommendations.topPicks.map(pick => pick.number);
+	const count = parseInt(document.getElementById("fill-count")?.value) || 10;
+	const minScore = parseFloat(document.getElementById("fill-min-score")?.value) || 0;
+	console.log("[KENO Autofill] Params - count:", count, "minScore:", minScore);
 
 	try {
-		const result = await chrome.runtime.sendMessage({
+		// Fetch FRESH recommendations from server before autofilling
+		const result = await chrome.runtime.sendMessage({ type: "GET_KENO_RECOMMENDATIONS" });
+		const { recommendations, tier, error } = result;
+		console.log("[KENO Autofill] Fresh recommendations:", recommendations?.topPicks?.length, "picks, tier:", tier);
+
+		if (error || !recommendations?.topPicks) {
+			console.log("[KENO Autofill] Error or no picks:", error);
+			alert("Failed to get recommendations. Try again.");
+			return;
+		}
+
+		// Use fresh recommendations
+		const numbers = recommendations.topPicks
+			.filter(pick => pick.score >= minScore)
+			.slice(0, count)
+			.map(pick => pick.number);
+		console.log("[KENO Autofill] Filtered numbers to fill:", numbers);
+
+		if (numbers.length === 0) {
+			console.log("[KENO Autofill] No picks match criteria");
+			alert("No picks match your criteria");
+			return;
+		}
+
+		// Update UI and cache with fresh data
+		renderRecommendations(recommendations, tier);
+
+		// Generate unique request ID to cancel stale autofills
+		const requestId = Date.now() + Math.random().toString(36).slice(2);
+		console.log("[KENO Autofill] Sending to background:", numbers, "requestId:", requestId);
+		const autofillResult = await chrome.runtime.sendMessage({
 			type: "KENO_AUTOFILL",
-			numbers: numbers
+			numbers: numbers,
+			requestId: requestId
 		});
 
-		if (!result.success) {
-			console.error("Autofill failed:", result.error);
+		if (!autofillResult.success) {
+			console.error("Autofill failed:", autofillResult.error);
 		}
 	} catch (e) {
 		console.error("Failed to autofill:", e);
+	}
+}
+
+// Start Keno autoplay
+async function startKenoAuto() {
+	if (!isPremium) return;
+
+	const minScore = parseFloat(document.getElementById("keno-auto-min-score")?.value) || 6.0;
+
+	try {
+		await chrome.runtime.sendMessage({
+			type: "START_KENO_AUTO",
+			settings: { minScore }
+		});
+		updateKenoAutoUI(true);
+	} catch (e) {
+		console.error("Failed to start Keno auto:", e);
+	}
+}
+
+// Stop Keno autoplay
+async function stopKenoAuto() {
+	try {
+		await chrome.runtime.sendMessage({ type: "STOP_KENO_AUTO" });
+		updateKenoAutoUI(false);
+	} catch (e) {
+		console.error("Failed to stop Keno auto:", e);
+	}
+}
+
+// Update Keno autoplay UI state
+function updateKenoAutoUI(isAutoPlaying) {
+	const statusEl = document.getElementById("keno-auto-status");
+	const modeEl = document.getElementById("keno-mode");
+	const startBtn = document.getElementById("keno-start-auto");
+	const stopBtn = document.getElementById("keno-stop-auto");
+
+	if (isAutoPlaying) {
+		if (statusEl) {
+			statusEl.textContent = "ON";
+			statusEl.className = "status-on";
+		}
+		if (modeEl) modeEl.textContent = "Auto";
+		if (startBtn) startBtn.disabled = true;
+		if (stopBtn) stopBtn.disabled = false;
+	} else {
+		if (statusEl) {
+			statusEl.textContent = "OFF";
+			statusEl.className = "status-off";
+		}
+		if (modeEl) modeEl.textContent = "Manual";
+		if (startBtn) startBtn.disabled = false;
+		if (stopBtn) stopBtn.disabled = true;
 	}
 }
 
@@ -296,6 +433,11 @@ function updateUI(state) {
 function switchGame(game) {
 	currentGame = game;
 
+	// Clear stale recommendations when switching to keno
+	if (game === 'keno') {
+		currentRecommendations = null;
+	}
+
 	// Update tab buttons
 	document.querySelectorAll('.game-tab').forEach(tab => {
 		tab.classList.toggle('active', tab.dataset.game === game);
@@ -318,9 +460,12 @@ document.addEventListener("DOMContentLoaded", async () => {
 	// Track popup opened (daily unique)
 	chrome.runtime.sendMessage({ type: "TRACK_POPUP_OPENED" }).catch(() => {});
 
+	// Load local premium status FIRST (before recommendations)
+	await loadLocalPremiumStatus();
+
 	await loadState();
 	await loadSettings();
-	await loadStats();
+	await loadKenoStats();
 
 	// Game tab switching
 	document.querySelectorAll('.game-tab').forEach(tab => {
@@ -452,6 +597,16 @@ document.addEventListener("DOMContentLoaded", async () => {
 	document.getElementById("autofill-picks").addEventListener("click", () => {
 		autofillPicks();
 	});
+
+	// Keno autoplay start button
+	document.getElementById("keno-start-auto").addEventListener("click", () => {
+		startKenoAuto();
+	});
+
+	// Keno autoplay stop button
+	document.getElementById("keno-stop-auto").addEventListener("click", () => {
+		stopKenoAuto();
+	});
 });
 
 // Listen for state updates
@@ -466,12 +621,18 @@ chrome.runtime.onMessage.addListener((message) => {
 		if (currentGame === 'keno') {
 			// Update recommendations first (if available) since they're the most current
 			if (message.recommendations) {
-				isPremium = message.tier === "premium";
+				// Only upgrade to premium, don't downgrade
+				if (message.tier === "premium") {
+					isPremium = true;
+				}
 				updatePremiumUI();
 				renderRecommendations(message.recommendations, message.tier || "free");
 			}
 			// Then load stats (but skip re-fetching recommendations since we just got them)
 			loadKenoStatsOnly();
 		}
+	}
+	if (message.type === "KENO_AUTO_STATE_UPDATE") {
+		updateKenoAutoUI(message.isAutoPlaying);
 	}
 });
