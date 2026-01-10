@@ -3,6 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <title>LinearnTrack</title>
+    <!-- Google Fonts: Bebas Neue, DM Sans, JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -10,12 +14,12 @@
 
     <!-- Game Tabs -->
     <div id="game-tabs">
-        <button class="game-tab active" data-game="dice">Dice</button>
-        <button class="game-tab" data-game="keno">KENO</button>
+        <button class="game-tab" data-game="dice">Dice</button>
+        <button class="game-tab active" data-game="keno">Keno</button>
     </div>
 
     <!-- DICE Panel -->
-    <div id="dice-panel" class="game-panel active">
+    <div id="dice-panel" class="game-panel">
         <div id="status" class="status-box">
             <div class="status-row">
                 <span>Status:</span>
@@ -101,11 +105,15 @@
     </div>
 
     <!-- KENO Panel -->
-    <div id="keno-panel" class="game-panel">
+    <div id="keno-panel" class="game-panel active">
         <div class="status-box">
             <div class="status-row">
+                <span>Status:</span>
+                <span id="keno-auto-status" class="status-off">OFF</span>
+            </div>
+            <div class="status-row">
                 <span>Mode:</span>
-                <span class="keno-mode">Stats Only</span>
+                <span id="keno-mode" class="keno-mode">Manual</span>
             </div>
         </div>
 
@@ -142,12 +150,27 @@
                 <div id="license-error" class="license-error"></div>
             </div>
             <div id="autofill-section" class="autofill-section" style="display: none;">
-                <button id="autofill-picks" class="btn btn-autofill">Autofill Top 10</button>
+                <!-- Manual fill controls -->
+                <div class="manual-fill-row">
+                    <label>Fill top</label>
+                    <input type="number" id="fill-count" min="1" max="10" value="10" class="fill-input">
+                    <label>score ≥</label>
+                    <input type="number" id="fill-min-score" min="0" max="10" step="0.1" value="0" class="fill-input">
+                    <button id="autofill-picks" class="btn btn-autofill-small">Fill</button>
+                </div>
+
+                <!-- Autoplay controls -->
+                <div class="autoplay-row">
+                    <label>Auto score ≥</label>
+                    <input type="number" id="keno-auto-min-score" min="0" max="10" step="0.1" value="6.0" class="fill-input">
+                    <button id="keno-start-auto" class="btn btn-start-small">Start</button>
+                    <button id="keno-stop-auto" class="btn btn-stop-small" disabled>Stop</button>
+                </div>
             </div>
         </div>
 
         <div id="keno-stats">
-            <h2>KENO Stats</h2>
+            <h2>Keno Stats</h2>
             <div class="stat-row">
                 <span>Total Rounds:</span>
                 <span id="keno-total-rounds">0</span>
@@ -167,7 +190,7 @@
                 <span>No data yet</span>
             </div>
 
-            <button id="reset-keno-stats" class="btn btn-reset">Reset KENO Stats</button>
+            <button id="reset-keno-stats" class="btn btn-reset">Reset Keno Stats</button>
         </div>
     </div>
 
