@@ -316,10 +316,13 @@ async function autofillPicks() {
 		// Update UI and cache with fresh data
 		renderRecommendations(recommendations, tier);
 
-		console.log("[KENO Autofill] Sending to background:", numbers);
+		// Generate unique request ID to cancel stale autofills
+		const requestId = Date.now() + Math.random().toString(36).slice(2);
+		console.log("[KENO Autofill] Sending to background:", numbers, "requestId:", requestId);
 		const autofillResult = await chrome.runtime.sendMessage({
 			type: "KENO_AUTOFILL",
-			numbers: numbers
+			numbers: numbers,
+			requestId: requestId
 		});
 
 		if (!autofillResult.success) {

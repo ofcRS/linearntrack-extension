@@ -32,6 +32,10 @@ function initKenoStats() {
     let waitingForRecommendations = false;
     let recommendationsResolve = null;
 
+    // Autofill state tracking (for request-ID based cancellation)
+    let currentAutofillRequestId = null;
+    let autofillTimeouts = [];
+
     // Schedule an action with cancellation support
     function scheduleKenoAction(fn, delay) {
         const timeoutId = setTimeout(() => {
@@ -565,9 +569,22 @@ function initKenoStats() {
         }
     }
 
-    // Autofill numbers on the KENO grid
-    function autofillNumbers(numbers) {
-        console.log('[KENO Autofill] autofillNumbers() called with:', numbers);
+    // Autofill numbers on the KENO grid with request-ID based cancellation
+    function autofillNumbers(numbers, requestId) {
+        console.log('[KENO Autofill] autofillNumbers() called with:', numbers, 'requestId:', requestId);
+
+        // Cancel any pending autofill from previous requests
+        if (autofillTimeouts.length > 0) {
+            console.log('[KENO Autofill] Cancelling', autofillTimeouts.length, 'pending timeouts from previous request');
+            autofillTimeouts.forEach(t => clearTimeout(t));
+            autofillTimeouts = [];
+        }
+
+        // Set this request as the current active one
+        currentAutofillRequestId = requestId;
+
+        // Helper to check if this request is still active
+        const isStillActive = () => currentAutofillRequestId === requestId;
 
         // First, clear any existing selections
         const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
@@ -577,10 +594,22 @@ function initKenoStats() {
         });
 
         // Wait for deselections to process, then select new numbers
-        setTimeout(() => {
+        const clearTimeoutId = setTimeout(() => {
+            // Check if this request was cancelled
+            if (!isStillActive()) {
+                console.log('[KENO Autofill] Request', requestId, 'cancelled, aborting before selection');
+                return;
+            }
+
             console.log('[KENO Autofill] Starting selection of', numbers.length, 'numbers');
             numbers.forEach((num, idx) => {
-                setTimeout(() => {
+                const clickTimeoutId = setTimeout(() => {
+                    // Check if this request was cancelled mid-fill
+                    if (!isStillActive()) {
+                        console.log('[KENO Autofill] Request', requestId, 'cancelled mid-fill, stopping at num:', num);
+                        return;
+                    }
+
                     // num is 1-40, data-index is 0-39
                     const dataIndex = num - 1;
                     const tile = document.querySelector(`button.tile[data-index="${dataIndex}"]`);
@@ -594,8 +623,10 @@ function initKenoStats() {
                         console.log('[KENO Autofill] Tile already selected:', num);
                     }
                 }, idx * 50); // Stagger clicks by 50ms
+                autofillTimeouts.push(clickTimeoutId);
             });
         }, 100);
+        autofillTimeouts.push(clearTimeoutId);
     }
 
     // Process KENO API response
@@ -707,8 +738,8 @@ function initKenoStats() {
                 break;
 
             case 'KENO_AUTOFILL':
-                console.log('[KENO Autofill] User script received message:', event.data.numbers);
-                autofillNumbers(event.data.numbers);
+                console.log('[KENO Autofill] User script received message:', event.data.numbers, 'requestId:', event.data.requestId);
+                autofillNumbers(event.data.numbers, event.data.requestId);
                 break;
 
             case 'KENO_START_AUTO':

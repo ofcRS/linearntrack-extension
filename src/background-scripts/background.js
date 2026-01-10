@@ -560,7 +560,7 @@ async function handleMessage(message, sender) {
 		}
 
 		case "KENO_AUTOFILL": {
-			console.log("[KENO Autofill] Background received:", message.numbers);
+			console.log("[KENO Autofill] Background received:", message.numbers, "requestId:", message.requestId);
 
 			// Check premium status first
 			const premiumData = await chrome.storage.local.get(["premiumStatus"]);
@@ -577,10 +577,11 @@ async function handleMessage(message, sender) {
 			console.log("[KENO Autofill] Active tab:", tabs[0]?.id, tabs[0]?.url);
 
 			if (tabs[0]?.id) {
-				console.log("[KENO Autofill] Forwarding to content script:", message.numbers);
+				console.log("[KENO Autofill] Forwarding to content script:", message.numbers, "requestId:", message.requestId);
 				chrome.tabs.sendMessage(tabs[0].id, {
 					type: "KENO_AUTOFILL",
 					numbers: message.numbers,
+					requestId: message.requestId,
 				}).catch((e) => console.error("[KENO Autofill] Forward failed:", e));
 				// Track autofill usage
 				trackAutofillUsed();

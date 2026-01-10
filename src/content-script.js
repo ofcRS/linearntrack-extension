@@ -98,10 +98,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		}, "*");
 		sendResponse({ success: true });
 	} else if (message.type === "KENO_AUTOFILL") {
-		console.log("[KENO Autofill] Content script received:", message.numbers);
+		console.log("[KENO Autofill] Content script received:", message.numbers, "requestId:", message.requestId);
 		window.postMessage({
 			type: "KENO_AUTOFILL",
 			numbers: message.numbers,
+			requestId: message.requestId,
 		}, "*");
 		console.log("[KENO Autofill] Posted to page window");
 		sendResponse({ success: true });
