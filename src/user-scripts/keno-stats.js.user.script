@@ -85,9 +85,15 @@ function initKenoStats() {
 
     // Auto-select numbers based on score threshold
     function autoSelectNumbers(minScore) {
-        // Clear existing selections first
-        const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
-        selectedTiles.forEach(tile => tile.click());
+        // Click "Clear Table" button to reliably clear all selections
+        const clearTableBtn = document.querySelector('button[data-testid="game-clear-table"]');
+        if (clearTableBtn) {
+            clearTableBtn.click();
+        } else {
+            // Fallback: manually clear selected tiles
+            const selectedTiles = document.querySelectorAll('button.tile[data-selected="true"]');
+            selectedTiles.forEach(tile => tile.click());
+        }
 
         setTimeout(() => {
             if (!currentRecommendations?.topPicks) {
